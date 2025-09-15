@@ -2,17 +2,15 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 
-ProcMap new_pm() {
-  ProcMap pm = {0};
-  return pm;
+ProcMap *new_pm() {
+  return (ProcMap *) kcalloc(1, sizeof (ProcMap), GFP_KERNEL);
 }
 
-ProcMapEntry new_pme() {
-  ProcMapEntry pme = {0};
-  return pme;
+ProcMapEntry *new_pme() {
+  return (ProcMapEntry *) kcalloc(1, sizeof (ProcMapEntry), GFP_KERNEL);
 }
 
-ErrorCode pm_add(ProcMap *pm, char *msg, int msglen, pid_t receiver, pid_t sender) {
+ErrorCode pm_add(ProcMap *pm, const char *msg, int msglen, pid_t receiver, pid_t sender) {
   ProcMapEntry *new_pme = (ProcMapEntry *) kcalloc(1, sizeof (ProcMapEntry), GFP_KERNEL);
 
   int len = (msglen <= MAX_MSG_LEN) ? msglen : MAX_MSG_LEN;
@@ -35,7 +33,7 @@ ErrorCode pm_add(ProcMap *pm, char *msg, int msglen, pid_t receiver, pid_t sende
   return Ok;
 }
 
-ErrorCode pm_consume(ProcMap *pm, char *msg, int max_msglen, pid_t receiver) {
+ErrorCode pm_consume(ProcMap *pm, char *msg, int max_msglen, pid_t receiver, int *return_length) {
   ProcMapEntry *cur_pme = pm->entries[receiver % TABLE_SIZE];
   ProcMapEntry *pre_pme = NULL;
   
@@ -48,7 +46,13 @@ ErrorCode pm_consume(ProcMap *pm, char *msg, int max_msglen, pid_t receiver) {
 
   if (cur_pme->receiver == receiver) {
     max_msglen = (max_msglen > cur_pme->msglen) ? (cur_pme->msglen) : max_msglen;
-    memcpy(msg, (void *) cur_pme->msg, max_msglen);
+
+    if (copy_to_user(msg, cur_pme->msg, max_msglen)) {
+      return Error;
+    } else {
+      *return_length = max_msglen;
+    }
+    //memcpy(msg, (void *) cur_pme->msg, max_msglen);
 
     if (pre_pme == NULL) {
       ProcMapEntry *nex_pme = cur_pme->next;
