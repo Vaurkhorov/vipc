@@ -8,10 +8,11 @@
 #include <linux/kernel.h>     // KERN_INFO 
 #include <linux/init.h>       // macros
 #include <linux/proc_fs.h>
-#include <asm/uaccess.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <sys/types.h>
+#include <linux/slab.h>
+#include <linux/file.h>
+#include <linux/uaccess.h>
+#include <linux/stddef.h>
+#include <linux/types.h>
 #include "ProcMap.h"
 
 #define PROC_NAME "vipc"
@@ -23,36 +24,6 @@ MODULE_VERSION("0.1");
 
 static ProcMap *pm;
 static struct proc_dir_entry *procfile;
-
-int ipc_read
-
-static int __init ipc_start(void)
-{
-    printk(KERN_INFO "Initialising map\n");
-
-    procfile = create_proc_entry(PROC_NAME, 0666, NULL);
-    if (procfile == NULL) {
-        remove_proc_entry(PROC_NAME, &proc_root);
-        printk(KERNEL_ALERT "Error: could not initialise /proc file");
-        return -ENOMEM;
-    }
-
-//    procfile->
-    
-    pm = new_pm();
-    if (pm == NULL) {
-        return -ENOMEM;
-    }
-    
-    printk(KERN_INFO "Module loaded\n");
-    return 0;
-}
-
-static void __exit ipc_end(void)
-{
-    printk(KERN_INFO "Closing\n");
-    kfree(pm);
-}
 
 static ssize_t read_message(
     struct file *file,
@@ -78,11 +49,59 @@ static ssize_t write_message(
     loff_t *offset
 ) {
     pid_t sender_pid = current->pid;
-    int return_length = 0;
 
     pid_t receiver_pid = 0;
+    const char *filename = file->f_path.dentry->d_name.name;
+    int error = kstrtoint(filename, 10, &receiver_pid);
+    if (error) {
+        return -EBADF;
+    }
 
-    ErrorCode code = pm_add(pm, buffer, length, receiver_pid, sender_pid)
+    char *msg = kcalloc(1, length, GFP_KERNEL);
+    if (copy_from_user(msg, buffer, length)) {
+        return -EFAULT;
+    }
+
+    ErrorCode code = pm_add(pm, buffer, length, receiver_pid, sender_pid);
+
+    if (code != Ok) {
+        return code;    // ensure that the enum values are errno ints
+    }
+
+    return length;
+}
+
+const struct proc_ops proc_vops = {
+    .proc_read = read_message,
+    .proc_write = write_message,
+};
+
+static int __init ipc_start(void)
+{
+    printk(KERN_INFO "Initialising map\n");
+
+    procfile = proc_create(PROC_NAME, 0666, NULL, &proc_vops);
+    if (procfile == NULL) {
+        remove_proc_entry(PROC_NAME, procfile);
+        printk(KERN_ALERT "Error: could not initialise /proc file");
+        return -ENOMEM;
+    }
+
+    //    procfile->
+
+    pm = new_pm();
+    if (pm == NULL) {
+        return -ENOMEM;
+    }
+
+    printk(KERN_INFO "Module loaded\n");
+    return 0;
+}
+
+static void __exit ipc_end(void)
+{
+    printk(KERN_INFO "Closing\n");
+    kfree(pm);
 }
 
 module_init(ipc_start);

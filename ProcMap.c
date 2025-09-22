@@ -2,11 +2,11 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 
-ProcMap *new_pm() {
+ProcMap *new_pm(void) {
   return (ProcMap *) kcalloc(1, sizeof (ProcMap), GFP_KERNEL);
 }
 
-ProcMapEntry *new_pme() {
+ProcMapEntry *new_pme(void) {
   return (ProcMapEntry *) kcalloc(1, sizeof (ProcMapEntry), GFP_KERNEL);
 }
 
